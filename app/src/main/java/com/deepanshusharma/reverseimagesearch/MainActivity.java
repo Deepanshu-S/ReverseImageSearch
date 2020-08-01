@@ -1,8 +1,10 @@
 package com.deepanshusharma.reverseimagesearch;
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -10,6 +12,7 @@ import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.provider.MediaStore;
+import android.util.Base64;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.MenuItem;
@@ -37,6 +40,7 @@ import com.google.android.material.textfield.TextInputLayout;
 
 
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.Console;
 import java.io.DataOutputStream;
 import java.io.File;
@@ -48,6 +52,9 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.Charset;
+
+import androidx.annotation.MainThread;
+import androidx.core.app.ActivityCompat;
 import androidx.navigation.NavController;
 import androidx.navigation.Navigation;
 import androidx.navigation.ui.AppBarConfiguration;
@@ -65,6 +72,11 @@ import okhttp3.Response;
 
 public class MainActivity extends AppCompatActivity {
 
+    private static final int REQUEST_EXTERNAL_STORAGE = 1;
+    private static String[] PERMISSIONS_STORAGE = {
+            Manifest.permission.READ_EXTERNAL_STORAGE,
+            Manifest.permission.WRITE_EXTERNAL_STORAGE
+    };
     private final OkHttpClient client = new OkHttpClient().newBuilder().followRedirects(false).followSslRedirects(false).build();
     SearchView searchBox;
     Button searchButton;
@@ -214,7 +226,19 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    public static void verifyStoragePermissions(Activity activity) {
+        // Check if we have write permission
+        int permission = ActivityCompat.checkSelfPermission(activity, Manifest.permission.WRITE_EXTERNAL_STORAGE);
 
+        if (permission != PackageManager.PERMISSION_GRANTED) {
+            // We don't have permission so prompt the user
+            ActivityCompat.requestPermissions(
+                    activity,
+                    PERMISSIONS_STORAGE,
+                    REQUEST_EXTERNAL_STORAGE
+            );
+        }
+    }
 
     private static int RESULT_LOAD_IMAGE = 1;
 
@@ -225,113 +249,134 @@ public class MainActivity extends AppCompatActivity {
 
         if(requestCode == RESULT_LOAD_IMAGE && resultCode == RESULT_OK){
             Uri imageUri = data.getData();
-            image.setImageURI(imageUri);
-            searchBox.setQueryHint("Almost started search....");
+//            image.setImageURI(imageUri);
 
-            new ImageSearchTask().execute(data);
-            searchBox.setQueryHint("Should've ended search....");
+            Uri selectedImage = imageUri;
+            String[] filePathColumn = { MediaStore.Images.Media.DATA };
+            Cursor cursor = getContentResolver().query(selectedImage,
+                    filePathColumn, null, null, null);
+            cursor.moveToFirst();
+            int columnIndex = cursor.getColumnIndex(filePathColumn[0]);
+            String picturePath = cursor.getString(columnIndex);
+            cursor.close();
+//            ImageView imageView = (ImageView) findViewById(R.id.imgView);
 
-        }
-    }
-
-    private void makePost(){
-        RequestBody requestBody = new MultipartBody.Builder()
-                .setType(MultipartBody.FORM)
-                .addFormDataPart("encoded_image", "filehere")
-                .addFormDataPart("image_content", "")
-                .build();
-
-        Request request = new Request.Builder()
-                .url("http://www.google.com/searchbyimage/upload")
-                .post(requestBody)
-                .build();
-
-        try (Response response = client.newCall(request).execute()) {
-            if (!response.isSuccessful()) throw new IOException("Unexpected code " + response);
-
-            Headers responseHeaders = response.headers();
-            for (int i = 0; i < responseHeaders.size(); i++) {
-                Log.d("Req_loop",responseHeaders.name(i) + ": " + responseHeaders.value(i));
+            Bitmap bitmap= null;
+            try {
+                bitmap = BitmapFactory.decodeStream(getContentResolver().openInputStream(data.getData()));
+            } catch (FileNotFoundException e) {
+                e.printStackTrace();
+                Log.e("dexter",e.toString());
             }
 
-            Log.d("Request", response.toString() );
-            System.out.println(response.body().string());
-        }
 
-        catch (IOException e) {
-            e.printStackTrace();
+            image.setImageBitmap(bitmap);
+//                responseView.setText("Uploading file path:" );
+//            image.setImageBitmap(BitmapFactory.decodeFile(picturePath));
+
+            searchBox.setQueryHint("Almost started search....");
+
+            new ImageSearchTask().execute(bitmapToBase64(bitmap));
+            searchBox.setQueryHint("Should've ended search....");
+
+
+
+
+
+
         }
     }
 
 
+    public static String bitmapToBase64(Bitmap bitmap)
+    { ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+        bitmap.compress(Bitmap.CompressFormat.PNG, 90, byteArrayOutputStream);
+        byte[] byteArray = byteArrayOutputStream.toByteArray();
+        return Base64.encodeToString(byteArray, Base64.DEFAULT); }
 
 
 
 
-
-
-    public class ImageSearchTask extends AsyncTask<Intent, Void, String> {
+    public class ImageSearchTask extends AsyncTask<String, Void, String> {
 
         // TODO (26) Override onPreExecute to set the loading indicator to visible
 
         @Override
-        protected String doInBackground(Intent... params) {
+        protected String doInBackground(String... params) {
 
-            File file=new File(params[0].getData().toString());
-
-            String fs ="";
-            try {
-                FileInputStream fis=new FileInputStream(file);
-                fs = fis.toString();
-            } catch (FileNotFoundException e) {
-                e.printStackTrace();
-            }
-            Log.d("dexter_file", file.toString());
-            Log.d("dexter_file_fs", fs);
-
-            RequestBody requestBody = new MultipartBody.Builder()
-                    .setType(MultipartBody.FORM)
-                    .addFormDataPart("encoded_image", "")
-                    .addFormDataPart("image_content", "")
-                    .build();
-
-            Request request = new Request.Builder()
-                    .url("https://www.google.com/searchbyimage/upload")
-                    .post(requestBody)
-                    .addHeader("allow_redirects", "false")
-                    .build();
-
-
-            //method 2
-//            final MediaType MEDIA_TYPE_PNG = MediaType.parse("image/png");
+//            File file=new File(params[0].getData().toString());
+//            Log.d("dexter_param", params[0].getData().toString());
 //
-//            RequestBody req = new MultipartBody.Builder().setType(MultipartBody.FORM)
-////                    .addFormDataPart("file", file.getName(),RequestBody.create(MediaType.parse("text/csv"), file)).build();
-//                    .addFormDataPart("encoded_image",file.getName(), RequestBody.create(MEDIA_TYPE_PNG, "fs")).build();
-//
-//            Log.d("dexter_request_body",req.toString());
+//            MediaType MEDIA_TYPE_PNG = MediaType.parse("image/png");
+//            String fs ="";
+//            try {
+//                FileInputStream fis=new FileInputStream(file);
+//                fs = fis.toString();
+//            } catch (FileNotFoundException e) {
+//                fs+=e.toString();
+//            }
+
+
+//            Log.d("dexter_file", BitmapFactory.decodeFile(picturePath).toString());
+//            Log.d("dexter_file_fs", file.getName()+file.canRead()+fs);
+
+
+//            Bitmap bitmap=params[0];
+                String file64 = params[0];
+
+//            RequestBody requestBody = new MultipartBody.Builder()
+//                    .setType(MultipartBody.FORM)
+//                    .addFormDataPart("encoded_image", file64)
+//                    .addFormDataPart("image_content", "")
+//                    .build();
 //
 //            Request request = new Request.Builder()
 //                    .url("https://www.google.com/searchbyimage/upload")
-//                    .post(req)
+//                    .post(requestBody)
+//                    .addHeader("allow_redirects", "false")
 //                    .build();
+
+
+            //method 2
+            MediaType MEDIA_TYPE_PNG = MediaType.parse("image/bitmap");
+
+            RequestBody req = new MultipartBody.Builder().setType(MultipartBody.FORM)
+                    .addFormDataPart("encoded_image", "foo",RequestBody.create(MediaType.parse("image/PNG"), file64)).build();
+//                    .addFormDataPart("encoded_image","bar", RequestBody.create(MEDIA_TYPE_PNG, file64)).build();
+
+            Log.d("dexter_request_body",req.toString());
+
+            Request request = new Request.Builder()
+                    .url("https://www.google.com/searchbyimage/upload")
+                    .post(req)
+                    .build();
+
+
+
             Log.d("dexter_request",request.toString());
 
             try (Response response = client.newCall(request).execute()) {
-                if (!response.isSuccessful()) throw new IOException("Unexpected code " + response);
+                //if (!response.isSuccessful()) throw new IOException("Unexpected code " + response);
+
+                Log.d("dexter_client",request.toString());
 
                 Headers responseHeaders = response.headers();
+
                 for (int i = 0; i < responseHeaders.size(); i++) {
-                    Log.d("dexter", responseHeaders.name(i) + ": " + responseHeaders.value(i));
+                    Log.d("dexter_loop", i+ responseHeaders.name(i) + ": " + responseHeaders.value(i));
+                    if(responseHeaders.name(i).toString().equals("location")) return responseHeaders.value(i) ;
                 }
 
                 Log.d("dexter", response.toString());
+
                 return response.body().string();
             } catch (IOException e) {
                 e.printStackTrace();
-                Log.e("dexter",e.toString());
+                Log.e("dexter_catch",e.toString());
             }
-        return "";
+            Log.d("dexter_async_task_over",request.toString());
+
+            return "";
         }
 
         @Override
@@ -340,7 +385,17 @@ public class MainActivity extends AppCompatActivity {
             if (resp != null && !resp.equals("")) {
                 // TODO (17) Call showJsonDataView if we have valid, non-null results
                 searchBox.setQueryHint("Complete");
-                Log.d("dexter",resp);
+                Log.d("dexter_resp",resp);
+                try{
+                    Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(resp));
+                    startActivity(browserIntent);
+
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    Log.d("dexter_intent_fail",e.toString());
+
+
+                }
 
 
             }
