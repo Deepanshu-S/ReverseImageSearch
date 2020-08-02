@@ -2,66 +2,45 @@ package com.deepanshusharma.reverseimagesearch;
 
 import android.Manifest;
 import android.app.Activity;
-import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
-import android.provider.MediaStore;
-import android.util.Base64;
+import android.os.ParcelFileDescriptor;
 import android.util.Log;
-import android.view.KeyEvent;
+import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
-import android.view.Menu;
 import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.SearchView;
 import android.widget.TextView;
 import android.widget.Toast;
 
-
 import com.google.android.gms.ads.AdRequest;
-import com.google.android.gms.ads.AdSize;
 import com.google.android.gms.ads.AdView;
 import com.google.android.gms.ads.MobileAds;
-import com.google.android.gms.ads.doubleclick.PublisherAdView;
 import com.google.android.gms.ads.initialization.InitializationStatus;
 import com.google.android.gms.ads.initialization.OnInitializationCompleteListener;
-import com.google.android.gms.tasks.OnCanceledListener;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
-import com.google.android.material.snackbar.Snackbar;
 import com.google.android.material.navigation.NavigationView;
-import com.google.android.material.textfield.TextInputLayout;
 
-
-import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
-import java.io.Console;
-import java.io.DataOutputStream;
-import java.io.File;
-import java.io.FileInputStream;
+import java.io.FileDescriptor;
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.nio.charset.Charset;
 
-import androidx.annotation.MainThread;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.Toolbar;
 import androidx.core.app.ActivityCompat;
+import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.navigation.NavController;
 import androidx.navigation.Navigation;
 import androidx.navigation.ui.AppBarConfiguration;
 import androidx.navigation.ui.NavigationUI;
-import androidx.drawerlayout.widget.DrawerLayout;
-import androidx.appcompat.app.AppCompatActivity;
-import androidx.appcompat.widget.Toolbar;
 import okhttp3.Headers;
 import okhttp3.MediaType;
 import okhttp3.MultipartBody;
@@ -72,11 +51,13 @@ import okhttp3.Response;
 
 public class MainActivity extends AppCompatActivity {
 
+    private static int RESULT_LOAD_IMAGE = 1;
     private static final int REQUEST_EXTERNAL_STORAGE = 1;
     private static String[] PERMISSIONS_STORAGE = {
             Manifest.permission.READ_EXTERNAL_STORAGE,
             Manifest.permission.WRITE_EXTERNAL_STORAGE
     };
+    private static final MediaType MEDIA_TYPE_PNG = MediaType.parse("image/png");
     private final OkHttpClient client = new OkHttpClient().newBuilder().followRedirects(false).followSslRedirects(false).build();
     SearchView searchBox;
     Button searchButton;
@@ -89,6 +70,11 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+
+        Intent intent = getIntent();
+        String action = intent.getAction();
+        String type = intent.getType();
+
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         this.searchButton = findViewById(R.id.searchButton);
@@ -96,27 +82,55 @@ public class MainActivity extends AppCompatActivity {
         FloatingActionButton fab = findViewById(R.id.fab);
         Toolbar toolbar = findViewById(R.id.toolbar);
         image = (ImageView) findViewById(R.id.imageView);
-        image.setImageResource(R.drawable.ic_launcher_foreground);
+
+        // Get intent, action and MIME type
+
+        if ( type != null && intent!=null) {
+            Log.e("dexter","intent received");
+
+            if ("text/plain".equals(type)) {
+                Log.e("dexter","text");
+                Log.e("dexter",type);
+                // Handle text being sent
+                CharSequence sharedText = intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT);
+
+                if (sharedText != null) {
+                    searchBox.setQuery(sharedText, true);
+                    searchGo();
+                }
+
+            } else if (type.startsWith("image/")) {
+
+                Uri imageUri = (Uri) intent.getParcelableExtra(Intent.EXTRA_STREAM);
+                Log.d("postFlow_share_bit_open", "" + imageUri);
 
 
+                // Handle single image being sent
+//                resolveIntentBitmap(intent);
 
-        MobileAds.initialize(this, new OnInitializationCompleteListener() {
-            @Override
-            public void onInitializationComplete(InitializationStatus initializationStatus) {
+                Bitmap bitmap = null;
+                try {
+                    Log.d("postFlow_share_bit",imageUri.toString());
+                    bitmap = getBitmapFromUri(imageUri);
+                    image.setImageBitmap(bitmap);
+                    new ImageSearchTask().execute(bitmap);
+                } catch (Exception e) {
+                    Log.d("postFlow_share_bit_fail", e.toString());
+                }
             }
-        });
-        AdView mAdView = findViewById(R.id.adView);
-        AdRequest adRequest = new AdRequest.Builder().build();
-        mAdView.loadAd(adRequest);
-//        AdSize customAdSize = new AdSize(250, 250);
-//        PublisherAdView adView = new PublisherAdView(this);
-//        adView.setAdSizes(customAdSize);
+            else {Log.e("dexter","else");
+                Log.e("dexter",type);
+            }
+        }
+
+
 
         setSupportActionBar(toolbar);
         fab.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
                 Intent intent = new Intent();
+                intent.putExtra(Intent.EXTRA_LOCAL_ONLY, true);
                 intent.setType("image/*");
                 intent.setAction(Intent.ACTION_GET_CONTENT);
 
@@ -145,10 +159,6 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onClick(View v) {
                 searchGo();
-//            startActivity(WebViewActivity.);
-//                Intent i = new Intent(String.valueOf(WebViewActivity.class));
-//                i.putExtra(WebViewActivity., "http://www.google.com");
-//                startActivity(i);
             }
         });
 
@@ -168,15 +178,30 @@ public class MainActivity extends AppCompatActivity {
 
 
         //Handle incoming text processing intent request
-        CharSequence sharedText = getIntent().getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT);
-        if (sharedText != null) {
-            searchBox.setQuery(sharedText, true);
-            searchGo();
-        }
+//        CharSequence sharedText = getIntent().getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT);
+//        if (sharedText != null) {
+//            searchBox.setQuery(sharedText, true);
+//            searchGo();
+//        }
+
+
+
+
+
+        MobileAds.initialize(this, new OnInitializationCompleteListener() {
+            @Override
+            public void onInitializationComplete(InitializationStatus initializationStatus) {
+            }
+        });
+        AdView mAdView = findViewById(R.id.adView);
+        AdRequest adRequest = new AdRequest.Builder().build();
+        mAdView.loadAd(adRequest);
+
+//        AdSize customAdSize = new AdSize(250, 250);
+//        PublisherAdView adView = new PublisherAdView(this);
+//        adView.setAdSizes(customAdSize);
 
     }
-
-
 
 
     public void searchGo() {
@@ -240,141 +265,93 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private static int RESULT_LOAD_IMAGE = 1;
-
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
 
-        if(requestCode == RESULT_LOAD_IMAGE && resultCode == RESULT_OK){
-            Uri imageUri = data.getData();
-//            image.setImageURI(imageUri);
-
-            Uri selectedImage = imageUri;
-            String[] filePathColumn = { MediaStore.Images.Media.DATA };
-            Cursor cursor = getContentResolver().query(selectedImage,
-                    filePathColumn, null, null, null);
-            cursor.moveToFirst();
-            int columnIndex = cursor.getColumnIndex(filePathColumn[0]);
-            String picturePath = cursor.getString(columnIndex);
-            cursor.close();
-//            ImageView imageView = (ImageView) findViewById(R.id.imgView);
-
-            Bitmap bitmap= null;
-            try {
-                bitmap = BitmapFactory.decodeStream(getContentResolver().openInputStream(data.getData()));
-            } catch (FileNotFoundException e) {
-                e.printStackTrace();
-                Log.e("dexter",e.toString());
-            }
-
-
-            image.setImageBitmap(bitmap);
-//                responseView.setText("Uploading file path:" );
-//            image.setImageBitmap(BitmapFactory.decodeFile(picturePath));
-
-            searchBox.setQueryHint("Almost started search....");
-
-            new ImageSearchTask().execute(bitmapToBase64(bitmap));
-            searchBox.setQueryHint("Should've ended search....");
-
-
-
-
-
+        if (requestCode == RESULT_LOAD_IMAGE && resultCode == RESULT_OK) {
+            resolveIntentBitmap(data);
 
         }
     }
 
 
-    public static String bitmapToBase64(Bitmap bitmap)
-    { ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+    private void resolveIntentBitmap(Intent data) {
+        Bitmap bitmap = null;
+        try {
+            bitmap = getBitmapFromUri(data.getData());
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+            Log.d("postFlow", e.toString());
+        } catch (IOException e) {
+            Log.d("postFlow", e.toString());
+        }
+        image.setImageBitmap(bitmap);
+        new ImageSearchTask().execute(bitmap);
+
+    }
+
+    private Bitmap getBitmapFromUri(Uri uri) throws IOException {
+        ParcelFileDescriptor parcelFileDescriptor =
+                getContentResolver().openFileDescriptor(uri, "r");
+        FileDescriptor fileDescriptor = parcelFileDescriptor.getFileDescriptor();
+        Bitmap image = BitmapFactory.decodeFileDescriptor(fileDescriptor);
+        parcelFileDescriptor.close();
+        return image;
+    }
+
+    public static byte[] tobyteArray(Bitmap bitmap) {
+        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
         bitmap.compress(Bitmap.CompressFormat.PNG, 90, byteArrayOutputStream);
         byte[] byteArray = byteArrayOutputStream.toByteArray();
-        return Base64.encodeToString(byteArray, Base64.DEFAULT); }
+        return byteArray;
+    }
 
 
+    public class ImageSearchTask extends AsyncTask<Bitmap, Void, String> {
 
-
-    public class ImageSearchTask extends AsyncTask<String, Void, String> {
-
-        // TODO (26) Override onPreExecute to set the loading indicator to visible
 
         @Override
-        protected String doInBackground(String... params) {
+        protected void onPreExecute() {
+            searchBox.setQueryHint("Searching....");
+        }
 
-//            File file=new File(params[0].getData().toString());
-//            Log.d("dexter_param", params[0].getData().toString());
-//
-//            MediaType MEDIA_TYPE_PNG = MediaType.parse("image/png");
-//            String fs ="";
-//            try {
-//                FileInputStream fis=new FileInputStream(file);
-//                fs = fis.toString();
-//            } catch (FileNotFoundException e) {
-//                fs+=e.toString();
-//            }
-
-
-//            Log.d("dexter_file", BitmapFactory.decodeFile(picturePath).toString());
-//            Log.d("dexter_file_fs", file.getName()+file.canRead()+fs);
-
-
-//            Bitmap bitmap=params[0];
-                String file64 = params[0];
-
-//            RequestBody requestBody = new MultipartBody.Builder()
-//                    .setType(MultipartBody.FORM)
-//                    .addFormDataPart("encoded_image", file64)
-//                    .addFormDataPart("image_content", "")
-//                    .build();
-//
-//            Request request = new Request.Builder()
-//                    .url("https://www.google.com/searchbyimage/upload")
-//                    .post(requestBody)
-//                    .addHeader("allow_redirects", "false")
-//                    .build();
-
-
-            //method 2
-            MediaType MEDIA_TYPE_PNG = MediaType.parse("image/bitmap");
-
+        // TODO (26) Override onPreExecute to set the loading indicator to visible
+        @Override
+        protected String doInBackground(Bitmap... params) {
+            Bitmap bitmap = params[0];
             RequestBody req = new MultipartBody.Builder().setType(MultipartBody.FORM)
-                    .addFormDataPart("encoded_image", "foo",RequestBody.create(MediaType.parse("image/PNG"), file64)).build();
-//                    .addFormDataPart("encoded_image","bar", RequestBody.create(MEDIA_TYPE_PNG, file64)).build();
+                    .addFormDataPart("encoded_image", "", RequestBody.create(MEDIA_TYPE_PNG, tobyteArray(bitmap))).build();
 
-            Log.d("dexter_request_body",req.toString());
+            Log.d("postFlow_request_body", req.toString());
 
             Request request = new Request.Builder()
                     .url("https://www.google.com/searchbyimage/upload")
                     .post(req)
                     .build();
-
-
-
-            Log.d("dexter_request",request.toString());
-
+            Log.d("postFlow_request", request.toString());
             try (Response response = client.newCall(request).execute()) {
                 //if (!response.isSuccessful()) throw new IOException("Unexpected code " + response);
 
-                Log.d("dexter_client",request.toString());
+                Log.d("postFlow_client", request.toString());
 
                 Headers responseHeaders = response.headers();
 
                 for (int i = 0; i < responseHeaders.size(); i++) {
-                    Log.d("dexter_loop", i+ responseHeaders.name(i) + ": " + responseHeaders.value(i));
-                    if(responseHeaders.name(i).toString().equals("location")) return responseHeaders.value(i) ;
+                    Log.d("postFlow_loop", i + responseHeaders.name(i) + ": " + responseHeaders.value(i));
+                    if (responseHeaders.name(i).toString().equals("location"))
+                        return responseHeaders.value(i);
                 }
 
-                Log.d("dexter", response.toString());
+                Log.d("postFlow_response", response.toString());
 
                 return response.body().string();
             } catch (IOException e) {
                 e.printStackTrace();
-                Log.e("dexter_catch",e.toString());
+                Log.d("postFlow_catch", e.toString());
             }
-            Log.d("dexter_async_task_over",request.toString());
+            Log.d("postFlow_task_over", request.toString());
 
             return "";
         }
@@ -383,32 +360,28 @@ public class MainActivity extends AppCompatActivity {
         protected void onPostExecute(String resp) {
             // TODO (27) As soon as the loading is complete, hide the loading indicator
             if (resp != null && !resp.equals("")) {
-                // TODO (17) Call showJsonDataView if we have valid, non-null results
                 searchBox.setQueryHint("Complete");
-                Log.d("dexter_resp",resp);
-                try{
+                Log.d("postFlow_resp", resp);
+                try {
                     Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(resp));
                     startActivity(browserIntent);
 
                 } catch (Exception e) {
                     e.printStackTrace();
-                    Log.d("dexter_intent_fail",e.toString());
-
-
+                    Log.d("postFlow_intent_fail", e.toString());
                 }
+                image.setImageDrawable(null);
+                searchBox.setQueryHint("Search...");
 
 
-            }
-            else {    searchBox.setQueryHint("failed");
+            } else {
+                searchBox.setQueryHint("Network error, please try again...");
             }
 
         }
-    }
-
-
-    protected void onPreExecute(int resp){
-        searchBox.setQueryHint("Started search....");
 
     }
+
 
 }
+
